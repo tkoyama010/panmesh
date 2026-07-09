@@ -35,11 +35,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install maturin
         run: pip install maturin[patchelf]
-      - name: Build
+      - name: Build wheel
         run: maturin build --release
-      - name: Install
+      - name: Install wheel
+        shell: bash
         run: |
-          pip install maturin
-          maturin develop --release
+          pip install --force-reinstall target/wheels/*.whl
       - name: Test import
         run: python -c "import panmesh; print(panmesh.__name__)"
