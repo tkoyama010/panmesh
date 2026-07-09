@@ -10,7 +10,12 @@ categories = ["science"]
 
 [lib]
 name = "panmesh"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
+pyo3 = "0.22"
+vtkio = "0.6"
