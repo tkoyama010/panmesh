@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Scrum Project Board"
+    url: "https://github.com/users/tkoyama010/projects?query=is%3Aopen"
+    about: "View sprint progress on the project board"

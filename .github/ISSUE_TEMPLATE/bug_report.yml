@@ -1,0 +1,65 @@
+name: "Bug Report"
+description: "Report a bug"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: "Bug Description"
+      description: "Clearly describe what is happening"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Reproduction Steps"
+      description: "Describe the steps to reproduce the bug"
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected Behavior"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual Behavior"
+    validations:
+      required: true
+
+  - type: input
+    id: panmesh-version
+    attributes:
+      label: "panmesh Version"
+      placeholder: "Check with: pip show panmesh"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: "Python Version"
+      placeholder: "Check with: python --version"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: "Priority"
+      options:
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true

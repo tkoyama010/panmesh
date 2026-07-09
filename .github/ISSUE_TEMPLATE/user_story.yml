@@ -1,0 +1,68 @@
+name: "User Story"
+description: "Add a user story (As a ... I want ... so that ...)"
+title: "[Story] "
+labels: ["story"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## User Story
+
+        Describe the feature from the user's perspective.
+        Format: **As a** \<role\>**, I want** \<feature\>**, so that** \<benefit\>
+
+  - type: textarea
+    id: story
+    attributes:
+      label: "Story"
+      description: "Write in the format: As a ... I want ... so that ..."
+      placeholder: "As a meshio user, I want to read VTK files with panmesh, so that I can benefit from faster I/O performance."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: "Acceptance Criteria"
+      description: "List the conditions that must be met for this story to be considered done"
+      placeholder: |
+        - [ ] VTK format files can be read
+        - [ ] Mesh points, cells, and cell_data are correctly retrieved
+        - [ ] Output is compatible with existing meshio
+    validations:
+      required: true
+
+  - type: dropdown
+    id: story-points
+    attributes:
+      label: "Story Points (Estimate)"
+      description: "Estimate using the Fibonacci scale (will be set in the project board)"
+      options:
+        - "1"
+        - "2"
+        - "3"
+        - "5"
+        - "8"
+        - "13"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: "Priority"
+      options:
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical-notes
+    attributes:
+      label: "Technical Notes"
+      description: "Add any implementation notes or related modules"
+      placeholder: "The Rust vtk module needs to be extended..."
+    validations:
+      required: false
