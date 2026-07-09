@@ -1,5 +1,7 @@
 #![allow(clippy::useless_conversion)]
 
+mod vtk;
+
 use pyo3::prelude::*;
 
 /// A Mesh object holding points, cells, and field data.
@@ -7,15 +9,15 @@ use pyo3::prelude::*;
 #[derive(Clone, Debug)]
 pub struct Mesh {
     #[pyo3(get, set)]
-    points: Vec<[f64; 3]>,
+    pub(crate) points: Vec<[f64; 3]>,
     #[pyo3(get, set)]
-    cells: Vec<CellBlock>,
+    pub(crate) cells: Vec<CellBlock>,
     #[pyo3(get, set)]
-    point_data: std::collections::HashMap<String, Vec<f64>>,
+    pub(crate) point_data: std::collections::HashMap<String, Vec<f64>>,
     #[pyo3(get, set)]
-    cell_data: std::collections::HashMap<String, Vec<Vec<f64>>>,
+    pub(crate) cell_data: std::collections::HashMap<String, Vec<Vec<f64>>>,
     #[pyo3(get, set)]
-    field_data: std::collections::HashMap<String, Vec<f64>>,
+    pub(crate) field_data: std::collections::HashMap<String, Vec<f64>>,
 }
 
 /// A block of cells of the same type.
@@ -23,9 +25,9 @@ pub struct Mesh {
 #[derive(Clone, Debug)]
 pub struct CellBlock {
     #[pyo3(get, set)]
-    cell_type: String,
+    pub(crate) cell_type: String,
     #[pyo3(get, set)]
-    data: Vec<Vec<usize>>,
+    pub(crate) data: Vec<Vec<usize>>,
 }
 
 #[pymethods]
@@ -75,16 +77,9 @@ impl CellBlock {
 
 /// Read a mesh from a file.
 #[pyfunction]
-fn read(_filename: &str) -> PyResult<Mesh> {
-    let points = vec![];
-    let cells = vec![];
-    Ok(Mesh {
-        points,
-        cells,
-        point_data: std::collections::HashMap::new(),
-        cell_data: std::collections::HashMap::new(),
-        field_data: std::collections::HashMap::new(),
-    })
+fn read(filename: &str) -> PyResult<Mesh> {
+    let path = std::path::Path::new(filename);
+    vtk::read_vtk(path).map_err(pyo3::exceptions::PyRuntimeError::new_err)
 }
 
 /// Write a mesh to a file.
