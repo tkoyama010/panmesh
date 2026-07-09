@@ -84,8 +84,9 @@ fn read(filename: &str) -> PyResult<Mesh> {
 
 /// Write a mesh to a file.
 #[pyfunction]
-fn write(_mesh: &Mesh, _filename: &str) -> PyResult<()> {
-    Ok(())
+fn write(mesh: &Mesh, filename: &str) -> PyResult<()> {
+    let path = std::path::Path::new(filename);
+    vtk::write_vtk(mesh, path).map_err(pyo3::exceptions::PyRuntimeError::new_err)
 }
 
 #[pymodule]
