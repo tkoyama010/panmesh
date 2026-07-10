@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use vtkio::model::{
-    Attribute, CellType, DataSet, ElementType, IOBuffer, Piece, PolyDataPiece,
-    UnstructuredGridPiece, VertexNumbers, Vtk,
+    Attribute, Attributes, ByteOrder, CellType, Cells, DataArray, DataSet, ElementType, FieldArray,
+    IOBuffer, Piece, PolyDataPiece, UnstructuredGridPiece, Version, VertexNumbers, Vtk,
 };
 
 use crate::{CellBlock, Mesh};
@@ -32,6 +32,31 @@ fn cell_type_to_string(ct: &CellType) -> &str {
         CellType::QuadraticWedge => "quadratic_wedge",
         CellType::QuadraticPyramid => "quadratic_pyramid",
         _ => "unknown",
+    }
+}
+
+fn string_to_cell_type(s: &str) -> Option<CellType> {
+    match s {
+        "vertex" => Some(CellType::Vertex),
+        "poly_vertex" => Some(CellType::PolyVertex),
+        "line" => Some(CellType::Line),
+        "poly_line" => Some(CellType::PolyLine),
+        "triangle" => Some(CellType::Triangle),
+        "triangle_strip" => Some(CellType::TriangleStrip),
+        "polygon" => Some(CellType::Polygon),
+        "quad" => Some(CellType::Quad),
+        "tetra" => Some(CellType::Tetra),
+        "hexahedron" => Some(CellType::Hexahedron),
+        "wedge" => Some(CellType::Wedge),
+        "pyramid" => Some(CellType::Pyramid),
+        "quadratic_edge" => Some(CellType::QuadraticEdge),
+        "quadratic_triangle" => Some(CellType::QuadraticTriangle),
+        "quadratic_quad" => Some(CellType::QuadraticQuad),
+        "quadratic_tetra" => Some(CellType::QuadraticTetra),
+        "quadratic_hexahedron" => Some(CellType::QuadraticHexahedron),
+        "quadratic_wedge" => Some(CellType::QuadraticWedge),
+        "quadratic_pyramid" => Some(CellType::QuadraticPyramid),
+        _ => None,
     }
 }
 
@@ -347,6 +372,128 @@ fn process_polydata(piece: PolyDataPiece) -> Result<Mesh, String> {
     })
 }
 
+fn build_point_attributes(
+    point_data: &HashMap<String, Vec<f64>>,
+    num_points: usize,
+) -> Vec<Attribute> {
+    let mut attrs = Vec::new();
+    for (name, data) in point_data {
+        let num_comp = data
+            .len()
+            .checked_div(num_points)
+            .map(|v| v.max(1) as u32)
+            .unwrap_or(1);
+        attrs.push(Attribute::DataArray(DataArray {
+            name: name.clone(),
+            elem: ElementType::Scalars {
+                num_comp,
+                lookup_table: Some("default".to_string()),
+            },
+            data: IOBuffer::F64(data.clone()),
+        }));
+    }
+    attrs
+}
+
+fn build_cell_attributes(
+    cell_data: &HashMap<String, Vec<Vec<f64>>>,
+    total_cells: usize,
+) -> Vec<Attribute> {
+    let mut attrs = Vec::new();
+    for (name, per_block) in cell_data {
+        let total_len: usize = per_block.iter().map(|v| v.len()).sum();
+        let num_comp = total_len
+            .checked_div(total_cells)
+            .map(|v| v.max(1) as u32)
+            .unwrap_or(1);
+        let flat: Vec<f64> = per_block.iter().flatten().copied().collect();
+        attrs.push(Attribute::DataArray(DataArray {
+            name: name.clone(),
+            elem: ElementType::Scalars {
+                num_comp,
+                lookup_table: Some("default".to_string()),
+            },
+            data: IOBuffer::F64(flat),
+        }));
+    }
+    attrs
+}
+
+fn build_field_attributes(field_data: &HashMap<String, Vec<f64>>) -> Vec<Attribute> {
+    let mut data_array = Vec::new();
+    for (name, data) in field_data {
+        data_array.push(FieldArray {
+            name: name.clone(),
+            elem: 1,
+            data: IOBuffer::F64(data.clone()),
+        });
+    }
+    if data_array.is_empty() {
+        Vec::new()
+    } else {
+        vec![Attribute::Field {
+            name: "panmesh_field".to_string(),
+            data_array,
+        }]
+    }
+}
+
+pub fn write_vtk(mesh: &Mesh, path: &Path) -> Result<(), String> {
+    let flat_points: Vec<f64> = mesh.points.iter().flat_map(|p| p.iter().copied()).collect();
+    let num_points = mesh.points.len();
+
+    let mut vertices: Vec<u32> = Vec::new();
+    let mut cell_types: Vec<CellType> = Vec::new();
+    let mut total_cells = 0usize;
+
+    for block in &mesh.cells {
+        let ct = string_to_cell_type(&block.cell_type)
+            .ok_or_else(|| format!("Unknown cell type: {}", block.cell_type))?;
+        for cell in &block.data {
+            vertices.push(cell.len() as u32);
+            vertices.extend(cell.iter().map(|&v| v as u32));
+            cell_types.push(ct);
+            total_cells += 1;
+        }
+    }
+
+    let point_attrs = build_point_attributes(&mesh.point_data, num_points);
+    let cell_attrs = build_cell_attributes(&mesh.cell_data, total_cells);
+    let field_attrs = build_field_attributes(&mesh.field_data);
+
+    let mut all_point_attrs = point_attrs;
+    all_point_attrs.extend(field_attrs);
+
+    let piece = UnstructuredGridPiece {
+        points: IOBuffer::F64(flat_points),
+        cells: Cells {
+            cell_verts: VertexNumbers::Legacy {
+                num_cells: total_cells as u32,
+                vertices,
+            },
+            types: cell_types,
+        },
+        data: Attributes {
+            point: all_point_attrs,
+            cell: cell_attrs,
+        },
+    };
+
+    let vtk = Vtk {
+        version: Version::new((4, 2)),
+        title: "panmesh".to_string(),
+        byte_order: ByteOrder::native(),
+        file_path: None,
+        data: DataSet::UnstructuredGrid {
+            meta: None,
+            pieces: vec![Piece::Inline(Box::new(piece))],
+        },
+    };
+
+    vtk.export_ascii(path)
+        .map_err(|e| format!("Failed to export VTK file: {:?}", e))
+}
+
 pub fn read_vtk(path: &Path) -> Result<Mesh, String> {
     let vtk = Vtk::import(path).map_err(|e| format!("Failed to import VTK file: {:?}", e))?;
 
@@ -579,5 +726,158 @@ LOOKUP_TABLE default
     fn test_read_nonexistent_file() {
         let result = read_vtk(std::path::Path::new("/nonexistent/file.vtk"));
         assert!(result.is_err());
+    }
+
+    fn temp_path(name: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(name);
+        p
+    }
+
+    #[test]
+    fn test_write_tet_round_trip() {
+        let src_path = write_temp_vtk(TET_VTK, "panmesh_rt_tet_src.vtk");
+        let mesh = read_vtk(&src_path).expect("Failed to read source");
+
+        let out_path = temp_path("panmesh_rt_tet_out.vtk");
+        write_vtk(&mesh, &out_path).expect("Failed to write");
+        let mesh2 = read_vtk(&out_path).expect("Failed to read back");
+
+        assert_eq!(mesh2.points.len(), mesh.points.len());
+        for (a, b) in mesh.points.iter().zip(mesh2.points.iter()) {
+            assert!((a[0] - b[0]).abs() < 1e-10);
+            assert!((a[1] - b[1]).abs() < 1e-10);
+            assert!((a[2] - b[2]).abs() < 1e-10);
+        }
+
+        assert_eq!(mesh2.cells.len(), 1);
+        assert_eq!(mesh2.cells[0].cell_type, "tetra");
+        assert_eq!(mesh2.cells[0].data.len(), 1);
+        assert_eq!(mesh2.cells[0].data[0], vec![0, 1, 2, 3]);
+
+        let pressure = mesh2.point_data.get("pressure").expect("Missing pressure");
+        assert_eq!(pressure.len(), 4);
+        assert!((pressure[0] - 1.0).abs() < 1e-10);
+        assert!((pressure[3] - 4.0).abs() < 1e-10);
+
+        let material = mesh2
+            .cell_data
+            .get("material_id")
+            .expect("Missing material_id");
+        assert_eq!(material.len(), 1);
+        assert_eq!(material[0].len(), 1);
+        assert!((material[0][0] - 42.0).abs() < 1e-10);
+
+        let _ = std::fs::remove_file(&src_path);
+        let _ = std::fs::remove_file(&out_path);
+    }
+
+    #[test]
+    fn test_write_mixed_round_trip() {
+        let src_path = write_temp_vtk(MIXED_VTK, "panmesh_rt_mixed_src.vtk");
+        let mesh = read_vtk(&src_path).expect("Failed to read source");
+
+        let out_path = temp_path("panmesh_rt_mixed_out.vtk");
+        write_vtk(&mesh, &out_path).expect("Failed to write");
+        let mesh2 = read_vtk(&out_path).expect("Failed to read back");
+
+        assert_eq!(mesh2.points.len(), mesh.points.len());
+
+        assert_eq!(mesh2.cells.len(), 2);
+        assert_eq!(mesh2.cells[0].cell_type, "triangle");
+        assert_eq!(mesh2.cells[0].data.len(), 2);
+        assert_eq!(mesh2.cells[0].data[0], vec![0, 1, 2]);
+        assert_eq!(mesh2.cells[0].data[1], vec![0, 2, 3]);
+
+        assert_eq!(mesh2.cells[1].cell_type, "tetra");
+        assert_eq!(mesh2.cells[1].data.len(), 1);
+        assert_eq!(mesh2.cells[1].data[0], vec![0, 1, 4, 5]);
+
+        let temp = mesh2
+            .point_data
+            .get("temperature")
+            .expect("Missing temperature");
+        assert_eq!(temp.len(), 6);
+        assert!((temp[0] - 10.0).abs() < 1e-10);
+        assert!((temp[5] - 60.0).abs() < 1e-10);
+
+        let region = mesh2.cell_data.get("region").expect("Missing region");
+        assert_eq!(region.len(), 2);
+        assert_eq!(region[0].len(), 2);
+        assert!((region[0][0] - 1.0).abs() < 1e-10);
+        assert!((region[0][1] - 2.0).abs() < 1e-10);
+        assert_eq!(region[1].len(), 1);
+        assert!((region[1][0] - 3.0).abs() < 1e-10);
+
+        let _ = std::fs::remove_file(&src_path);
+        let _ = std::fs::remove_file(&out_path);
+    }
+
+    #[test]
+    fn test_write_from_scratch() {
+        let mesh = Mesh {
+            points: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            cells: vec![CellBlock {
+                cell_type: "tetra".to_string(),
+                data: vec![vec![0, 1, 2, 3]],
+            }],
+            point_data: {
+                let mut m = HashMap::new();
+                m.insert("pressure".to_string(), vec![1.0, 2.0, 3.0, 4.0]);
+                m
+            },
+            cell_data: {
+                let mut m = HashMap::new();
+                m.insert("material_id".to_string(), vec![vec![42.0]]);
+                m
+            },
+            field_data: HashMap::new(),
+        };
+
+        let out_path = temp_path("panmesh_rt_scratch.vtk");
+        write_vtk(&mesh, &out_path).expect("Failed to write");
+        let mesh2 = read_vtk(&out_path).expect("Failed to read back");
+
+        assert_eq!(mesh2.points.len(), 4);
+        assert_eq!(mesh2.cells.len(), 1);
+        assert_eq!(mesh2.cells[0].cell_type, "tetra");
+        assert_eq!(mesh2.cells[0].data[0], vec![0, 1, 2, 3]);
+
+        let pressure = mesh2.point_data.get("pressure").expect("Missing pressure");
+        assert_eq!(pressure.len(), 4);
+        assert!((pressure[0] - 1.0).abs() < 1e-10);
+
+        let material = mesh2
+            .cell_data
+            .get("material_id")
+            .expect("Missing material_id");
+        assert_eq!(material.len(), 1);
+        assert!((material[0][0] - 42.0).abs() < 1e-10);
+
+        let _ = std::fs::remove_file(&out_path);
+    }
+
+    #[test]
+    fn test_write_unknown_cell_type() {
+        let mesh = Mesh {
+            points: vec![[0.0, 0.0, 0.0]],
+            cells: vec![CellBlock {
+                cell_type: "nonexistent".to_string(),
+                data: vec![vec![0]],
+            }],
+            point_data: HashMap::new(),
+            cell_data: HashMap::new(),
+            field_data: HashMap::new(),
+        };
+
+        let out_path = temp_path("panmesh_rt_bad.vtk");
+        let result = write_vtk(&mesh, &out_path);
+        assert!(result.is_err());
+        let _ = std::fs::remove_file(&out_path);
     }
 }
