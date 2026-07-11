@@ -25,6 +25,9 @@ classifiers = [
 ]
 dynamic = ["version"]
 
+[dependency-groups]
+test = ["pytest>=8.0"]
+
 [project.urls]
 Homepage = "https://github.com/tkoyama010/panmesh"
 Repository = "https://github.com/tkoyama010/panmesh"

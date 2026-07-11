@@ -37,6 +37,16 @@ print(mesh)
 panmesh.write(mesh, "out.vtk")
 ```
 
+## Testing
+
+The Python end-to-end tests live under `tests/` and run against the built
+extension. Build the extension into the environment first, then run pytest:
+
+```bash
+uv run maturin develop
+uv run --group test pytest
+```
+
 ## License
 
 [MIT](LICENSE)
