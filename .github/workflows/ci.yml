@@ -50,3 +50,8 @@ jobs:
           pip install --force-reinstall target/wheels/*.whl
       - name: Test import
         run: python -c "import panmesh; print(panmesh.__name__)"
+      - name: Run Python tests
+        shell: bash
+        run: |
+          pip install pytest
+          python -m pytest tests/ -v
