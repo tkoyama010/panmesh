@@ -47,6 +47,25 @@ uv run maturin develop
 uv run --group test pytest
 ```
 
+## Architecture Decision Records
+
+Architecturally significant decisions — such as crate choices for file-format
+parsing — are recorded as [Markdown Architectural Decision Records
+(MADR)](https://adr.github.io/madr/) in [`docs/decisions/`](docs/decisions/).
+
+When opening an issue for an architecturally significant proposal, accompany it
+with a new ADR record:
+
+1. Copy `docs/decisions/adr-template.md` to `docs/decisions/NNNN-short-title-with-dashes.md`
+   (use the next free number).
+2. Fill in the YAML front matter (`status`, `date`, `decision-makers`,
+   `consulted`, `informed`) and the MADR sections.
+3. Link the ADR from the issue and reference the issue from the ADR.
+4. Include the ADR in the PR that implements the decision.
+
+A CI step lints ADR files with markdownlint using the MADR `.markdownlint.yml`
+configuration on PRs that touch `docs/decisions/`.
+
 ## License
 
 [MIT](LICENSE)

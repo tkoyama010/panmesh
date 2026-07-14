@@ -19,6 +19,17 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+  markdownlint:
+    name: Markdown Lint (ADRs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v19
+        with:
+          globs: |
+            docs/decisions/**/*.md
+          config: docs/decisions/.markdownlint.yml
+
   build:
     name: Build and Test
     strategy:
