@@ -75,14 +75,14 @@ impl CellBlock {
     }
 }
 
-/// Read a mesh from a file.
+/// Read a mesh from a file (supports .vtk legacy and .vtu XML formats).
 #[pyfunction]
 fn read(filename: &str) -> PyResult<Mesh> {
     let path = std::path::Path::new(filename);
     vtk::read_vtk(path).map_err(pyo3::exceptions::PyRuntimeError::new_err)
 }
 
-/// Write a mesh to a file.
+/// Write a mesh to a file (supports .vtk legacy and .vtu XML formats).
 #[pyfunction]
 fn write(mesh: &Mesh, filename: &str) -> PyResult<()> {
     let path = std::path::Path::new(filename);
