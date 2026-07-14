@@ -490,8 +490,20 @@ pub fn write_vtk(mesh: &Mesh, path: &Path) -> Result<(), String> {
         },
     };
 
-    vtk.export_ascii(path)
-        .map_err(|e| format!("Failed to export VTK file: {:?}", e))
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .ok_or("File must have an extension")?;
+
+    match ext {
+        "vtk" => vtk
+            .export_ascii(path)
+            .map_err(|e| format!("Failed to export VTK file: {:?}", e)),
+        "vtu" => vtk
+            .export(path)
+            .map_err(|e| format!("Failed to export VTU file: {:?}", e)),
+        _ => Err(format!("Unsupported file extension: .{}", ext)),
+    }
 }
 
 pub fn read_vtk(path: &Path) -> Result<Mesh, String> {
@@ -859,6 +871,308 @@ LOOKUP_TABLE default
         assert_eq!(material.len(), 1);
         assert!((material[0][0] - 42.0).abs() < 1e-10);
 
+        let _ = std::fs::remove_file(&out_path);
+    }
+
+    const TET_VTU: &str = r#"<?xml version="1.0"?>
+<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">
+  <UnstructuredGrid>
+    <Piece NumberOfPoints="4" NumberOfCells="1">
+      <PointData Scalars="pressure">
+        <DataArray type="Float64" Name="pressure" format="ascii">
+          1.0 2.0 3.0 4.0
+        </DataArray>
+      </PointData>
+      <CellData Scalars="material_id">
+        <DataArray type="Float64" Name="material_id" format="ascii">
+          42.0
+        </DataArray>
+      </CellData>
+      <Points>
+        <DataArray type="Float64" NumberOfComponents="3" format="ascii">
+          0.0 0.0 0.0
+          1.0 0.0 0.0
+          0.0 1.0 0.0
+          0.0 0.0 1.0
+        </DataArray>
+      </Points>
+      <Cells>
+        <DataArray type="Int32" Name="connectivity" format="ascii">
+          0 1 2 3
+        </DataArray>
+        <DataArray type="Int32" Name="offsets" format="ascii">
+          4
+        </DataArray>
+        <DataArray type="UInt8" Name="types" format="ascii">
+          10
+        </DataArray>
+      </Cells>
+    </Piece>
+  </UnstructuredGrid>
+</VTKFile>
+"#;
+
+    const MIXED_VTU: &str = r#"<?xml version="1.0"?>
+<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">
+  <UnstructuredGrid>
+    <Piece NumberOfPoints="6" NumberOfCells="3">
+      <PointData Scalars="temperature">
+        <DataArray type="Float64" Name="temperature" format="ascii">
+          10.0 20.0 30.0 40.0 50.0 60.0
+        </DataArray>
+      </PointData>
+      <CellData Scalars="region">
+        <DataArray type="Float64" Name="region" format="ascii">
+          1.0 2.0 3.0
+        </DataArray>
+      </CellData>
+      <Points>
+        <DataArray type="Float64" NumberOfComponents="3" format="ascii">
+          0.0 0.0 0.0
+          1.0 0.0 0.0
+          1.0 1.0 0.0
+          0.0 1.0 0.0
+          0.0 0.0 1.0
+          1.0 0.0 1.0
+        </DataArray>
+      </Points>
+      <Cells>
+        <DataArray type="Int32" Name="connectivity" format="ascii">
+          0 1 2 0 2 3 0 1 4 5
+        </DataArray>
+        <DataArray type="Int32" Name="offsets" format="ascii">
+          3 6 10
+        </DataArray>
+        <DataArray type="UInt8" Name="types" format="ascii">
+          5 5 10
+        </DataArray>
+      </Cells>
+    </Piece>
+  </UnstructuredGrid>
+</VTKFile>
+"#;
+
+    fn write_temp_file(content: &str, name: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(name);
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_read_tet_vtu() {
+        let path = write_temp_file(TET_VTU, "panmesh_test_tet.vtu");
+        let mesh = read_vtk(&path).expect("Failed to read tet VTU");
+
+        assert_eq!(mesh.points.len(), 4);
+        assert_eq!(mesh.points[0], [0.0, 0.0, 0.0]);
+        assert_eq!(mesh.points[1], [1.0, 0.0, 0.0]);
+        assert_eq!(mesh.points[2], [0.0, 1.0, 0.0]);
+        assert_eq!(mesh.points[3], [0.0, 0.0, 1.0]);
+
+        assert_eq!(mesh.cells.len(), 1);
+        assert_eq!(mesh.cells[0].cell_type, "tetra");
+        assert_eq!(mesh.cells[0].data.len(), 1);
+        assert_eq!(mesh.cells[0].data[0], vec![0, 1, 2, 3]);
+
+        let pressure = mesh.point_data.get("pressure").expect("Missing pressure");
+        assert_eq!(pressure.len(), 4);
+        assert!((pressure[0] - 1.0).abs() < 1e-10);
+        assert!((pressure[3] - 4.0).abs() < 1e-10);
+
+        let material = mesh
+            .cell_data
+            .get("material_id")
+            .expect("Missing material_id");
+        assert_eq!(material.len(), 1);
+        assert_eq!(material[0].len(), 1);
+        assert!((material[0][0] - 42.0).abs() < 1e-10);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_read_mixed_vtu() {
+        let path = write_temp_file(MIXED_VTU, "panmesh_test_mixed.vtu");
+        let mesh = read_vtk(&path).expect("Failed to read mixed VTU");
+
+        assert_eq!(mesh.points.len(), 6);
+
+        assert_eq!(mesh.cells.len(), 2);
+        assert_eq!(mesh.cells[0].cell_type, "triangle");
+        assert_eq!(mesh.cells[0].data.len(), 2);
+        assert_eq!(mesh.cells[0].data[0], vec![0, 1, 2]);
+        assert_eq!(mesh.cells[0].data[1], vec![0, 2, 3]);
+
+        assert_eq!(mesh.cells[1].cell_type, "tetra");
+        assert_eq!(mesh.cells[1].data.len(), 1);
+        assert_eq!(mesh.cells[1].data[0], vec![0, 1, 4, 5]);
+
+        let temp = mesh
+            .point_data
+            .get("temperature")
+            .expect("Missing temperature");
+        assert_eq!(temp.len(), 6);
+        assert!((temp[0] - 10.0).abs() < 1e-10);
+        assert!((temp[5] - 60.0).abs() < 1e-10);
+
+        let region = mesh.cell_data.get("region").expect("Missing region");
+        assert_eq!(region.len(), 2);
+        assert_eq!(region[0].len(), 2);
+        assert!((region[0][0] - 1.0).abs() < 1e-10);
+        assert!((region[0][1] - 2.0).abs() < 1e-10);
+        assert_eq!(region[1].len(), 1);
+        assert!((region[1][0] - 3.0).abs() < 1e-10);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_write_vtu_round_trip() {
+        let mesh = Mesh {
+            points: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            cells: vec![CellBlock {
+                cell_type: "tetra".to_string(),
+                data: vec![vec![0, 1, 2, 3]],
+            }],
+            point_data: {
+                let mut m = HashMap::new();
+                m.insert("pressure".to_string(), vec![1.0, 2.0, 3.0, 4.0]);
+                m
+            },
+            cell_data: {
+                let mut m = HashMap::new();
+                m.insert("material_id".to_string(), vec![vec![42.0]]);
+                m
+            },
+            field_data: HashMap::new(),
+        };
+
+        let out_path = temp_path("panmesh_vtu_roundtrip.vtu");
+        write_vtk(&mesh, &out_path).expect("Failed to write VTU");
+        let mesh2 = read_vtk(&out_path).expect("Failed to read VTU back");
+
+        assert_eq!(mesh2.points.len(), 4);
+        for (a, b) in mesh.points.iter().zip(mesh2.points.iter()) {
+            assert!((a[0] - b[0]).abs() < 1e-10);
+            assert!((a[1] - b[1]).abs() < 1e-10);
+            assert!((a[2] - b[2]).abs() < 1e-10);
+        }
+
+        assert_eq!(mesh2.cells.len(), 1);
+        assert_eq!(mesh2.cells[0].cell_type, "tetra");
+        assert_eq!(mesh2.cells[0].data[0], vec![0, 1, 2, 3]);
+
+        let pressure = mesh2.point_data.get("pressure").expect("Missing pressure");
+        assert_eq!(pressure.len(), 4);
+        assert!((pressure[0] - 1.0).abs() < 1e-10);
+        assert!((pressure[3] - 4.0).abs() < 1e-10);
+
+        let material = mesh2
+            .cell_data
+            .get("material_id")
+            .expect("Missing material_id");
+        assert_eq!(material.len(), 1);
+        assert_eq!(material[0].len(), 1);
+        assert!((material[0][0] - 42.0).abs() < 1e-10);
+
+        let _ = std::fs::remove_file(&out_path);
+    }
+
+    #[test]
+    fn test_write_vtu_mixed_round_trip() {
+        let mesh = Mesh {
+            points: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+            ],
+            cells: vec![
+                CellBlock {
+                    cell_type: "triangle".to_string(),
+                    data: vec![vec![0, 1, 2], vec![0, 2, 3]],
+                },
+                CellBlock {
+                    cell_type: "tetra".to_string(),
+                    data: vec![vec![0, 1, 4, 5]],
+                },
+            ],
+            point_data: {
+                let mut m = HashMap::new();
+                m.insert(
+                    "temperature".to_string(),
+                    vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+                );
+                m
+            },
+            cell_data: {
+                let mut m = HashMap::new();
+                m.insert("region".to_string(), vec![vec![1.0, 2.0], vec![3.0]]);
+                m
+            },
+            field_data: HashMap::new(),
+        };
+
+        let out_path = temp_path("panmesh_vtu_mixed.vtu");
+        write_vtk(&mesh, &out_path).expect("Failed to write VTU");
+        let mesh2 = read_vtk(&out_path).expect("Failed to read VTU back");
+
+        assert_eq!(mesh2.points.len(), 6);
+
+        assert_eq!(mesh2.cells.len(), 2);
+        assert_eq!(mesh2.cells[0].cell_type, "triangle");
+        assert_eq!(mesh2.cells[0].data.len(), 2);
+        assert_eq!(mesh2.cells[0].data[0], vec![0, 1, 2]);
+        assert_eq!(mesh2.cells[0].data[1], vec![0, 2, 3]);
+
+        assert_eq!(mesh2.cells[1].cell_type, "tetra");
+        assert_eq!(mesh2.cells[1].data.len(), 1);
+        assert_eq!(mesh2.cells[1].data[0], vec![0, 1, 4, 5]);
+
+        let temp = mesh2
+            .point_data
+            .get("temperature")
+            .expect("Missing temperature");
+        assert_eq!(temp.len(), 6);
+        assert!((temp[0] - 10.0).abs() < 1e-10);
+        assert!((temp[5] - 60.0).abs() < 1e-10);
+
+        let region = mesh2.cell_data.get("region").expect("Missing region");
+        assert_eq!(region.len(), 2);
+        assert_eq!(region[0].len(), 2);
+        assert!((region[0][0] - 1.0).abs() < 1e-10);
+        assert!((region[0][1] - 2.0).abs() < 1e-10);
+        assert_eq!(region[1].len(), 1);
+        assert!((region[1][0] - 3.0).abs() < 1e-10);
+
+        let _ = std::fs::remove_file(&out_path);
+    }
+
+    #[test]
+    fn test_write_unsupported_extension() {
+        let mesh = Mesh {
+            points: vec![[0.0, 0.0, 0.0]],
+            cells: vec![CellBlock {
+                cell_type: "vertex".to_string(),
+                data: vec![vec![0]],
+            }],
+            point_data: HashMap::new(),
+            cell_data: HashMap::new(),
+            field_data: HashMap::new(),
+        };
+
+        let out_path = temp_path("panmesh_bad.xyz");
+        let result = write_vtk(&mesh, &out_path);
+        assert!(result.is_err());
         let _ = std::fs::remove_file(&out_path);
     }
 
